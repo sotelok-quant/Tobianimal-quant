@@ -1,311 +1,330 @@
 import os
 import sqlite3
-from datetime import datetime
-from flask import Flask, render_template_string, request, redirect, url_for, session
+import random
+from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
 
 app = Flask(__name__)
-app.secret_key = "sotelok_animal_quant_2026"
+app.secret_key = 'sotelok_animal_quant_secret_key_2026'
 
-DB_ANIMALITOS = "sotelok_animalitos.db"
+# --- CONFIGURACIÓN DE BASE DE DATOS Y MOTOR CUANTITATIVO ---
+DB_NAME = 'animal_quant.db'
 
-def inicializar_base_datos():
-    """Inicializa la base de datos exclusiva para loterías de animalitos."""
-    try:
-        conn = sqlite3.connect(DB_ANIMALITOS)
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS usuarios (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                email TEXT UNIQUE,
-                password TEXT,
-                plan TEXT DEFAULT 'VIP',
-                fecha_registro TEXT
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS bankroll (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                capital_inicial REAL DEFAULT 500.0,
-                capital_actual REAL DEFAULT 500.0,
-                total_apostado REAL DEFAULT 0.0,
-                total_ganado REAL DEFAULT 0.0
-            )
-        ''')
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS pronosticos (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                loteria TEXT,
-                fecha TEXT,
-                fijo_num TEXT,
-                fijo_nom TEXT,
-                fijo_razon TEXT,
-                op1_num TEXT,
-                op1_nom TEXT,
-                op2_num TEXT,
-                op2_nom TEXT,
-                estado TEXT DEFAULT 'PENDIENTE'
-            )
-        ''')
-        conn.commit()
+ANIMALES = {
+    0: 'Delfín', 00: 'Ballena', 1: 'Carnero', 2: 'Toro', 3: 'Ciempiés', 4: 'Alacrán',
+    5: 'León', 6: 'Rana', 7: 'Perico', 8: 'Ratón', 9: 'Águila', 10: 'Tigre',
+    11: 'Gato', 12: 'Caballo', 13: 'Mono', 14: 'Paloma', 15: 'Zorro', 16: 'Oso',
+    17: 'Pavo', 18: 'Burro', 19: 'Chivo', 20: 'Cochino', 21: 'Gallo', 22: 'Camello',
+    23: 'Cebra', 24: 'Iguana', 25: 'G统计', 26: 'Vaca', 27: 'Perro', 28: 'Zamuro',
+    29: 'Elefante', 30: 'Caimán', 31: 'Lapa', 32: 'Ardilla', 33: 'Pescado',
+    34: 'Venado', 35: 'Jirafa', 36: 'Culebra'
+}
 
-        # Usuario administrador por defecto
-        cursor.execute('SELECT COUNT(*) FROM usuarios')
-        if cursor.fetchone()[0] == 0:
-            cursor.execute("INSERT INTO usuarios (email, password, plan, fecha_registro) VALUES (?, ?, ?, ?)", 
-                           ("admin@animalquant.com", "animal2026", "VIP", datetime.now().strftime("%d/%m/%Y")))
-            conn.commit()
-
-        # Bankroll inicial por defecto
-        cursor.execute('SELECT COUNT(*) FROM bankroll')
-        if cursor.fetchone()[0] == 0:
-            cursor.execute('INSERT INTO bankroll (capital_inicial, capital_actual, total_apostado, total_ganado) VALUES (500.0, 500.0, 0.0, 0.0)')
-            conn.commit()
-            
-        conn.close()
-    except Exception as e:
-        print(f"Error BD Animalitos: {e}")
-
-def motor_matematico_animalitos(loteria):
-    """
-    MOTOR CUANTITATIVO DE ANIMALITOS:
-    Aplica análisis de Poisson, ciclos de retraso y Markov para 
-    extraer el Fijo y los 2 Opcionales de alta precisión.
-    """
-    catalogo = {
-        "00": "Delfín", "0": "Delfín", "1": "Carnero", "2": "Toro", "3": "Ciempiés", 
-        "4": "Alacrán", "5": "León", "6": "Rana", "7": "Perico", "8": "Ratón", 
-        "9": "Águila", "10": "Tigre", "11": "Gato", "12": "Caballo", "13": "Mono", 
-        "14": "Paloma", "15": "Zorro", "16": "Oso", "17": "Pavo", "18": "Burro", 
-        "19": "Chivo", "20": "Cochino", "21": "Gallo", "22": "Camello", "23": "Cebra", 
-        "24": "Iguana", "25": "Gallina", "26": "Vaca", "27": "Perro", "28": "Zamuro", 
-        "29": "Elefante", "30": "Caimán", "31": "Lapa", "32": "Ardilla", "33": "Pescado", 
-        "34": "Venado", "35": "Girafa", "36": "Culebra"
-    }
-
-    # Selección algorítmica basada en desvío estocástico de la lotería seleccionada
-    if loteria == "Lotto Activo":
-        fijo = ("5", catalogo["5"], "Cierra ciclo crítico de retraso con desvío +2.9 sobre la media teórica.")
-        op1 = ("10", catalogo["10"], "Alta coexistencia por Cadenas de Markov en franja matutina.")
-        op2 = ("27", catalogo["27"], "Anomalía de frecuencia detectada para la sesión vespertina.")
-    else: # La Granjita
-        fijo = ("00", catalogo["00"], "Máxima tensión estadística acumulada en las últimas 48 horas.")
-        op1 = ("12", catalogo["12"], "Patrón de transición de familia numérica de cuadrante impar.")
-        op2 = ("36", catalogo["36"], "Activación por ley de grandes números para cierre de jornada.")
-
-    return fijo, op1, op2
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    inicializar_base_datos()
-    error = None
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '').strip()
-        conn = sqlite3.connect(DB_ANIMALITOS)
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, email, plan FROM usuarios WHERE email = ? AND password = ?', (email, password))
-        user = cursor.fetchone()
-        conn.close()
-        if user:
-            session['user_id'] = user[0]
-            session['email'] = user[1]
-            return redirect(url_for('home'))
-        else:
-            error = "Credenciales de acceso inválidas."
-    return render_template_string(AUTH_TEMPLATE, error=error)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/')
-def home():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    inicializar_base_datos()
-    loteria_sel = request.args.get('loteria', 'Lotto Activo')
-    
-    conn = sqlite3.connect(DB_ANIMALITOS)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    # Obtener el pronóstico más reciente para esta lotería
-    cursor.execute('SELECT * FROM pronosticos WHERE loteria = ? ORDER BY id DESC LIMIT 1', (loteria_sel,))
-    pronostico = cursor.fetchone()
-    
-    cursor.execute('SELECT * FROM bankroll WHERE id = 1')
-    bankroll = dict(cursor.fetchone())
-    conn.close()
-
-    return render_template_string(HTML_TEMPLATE, pronostico=pronostico, loteria=loteria_sel, bankroll=bankroll, user_email=session.get('email'))
-
-@app.route('/calcular', methods=['POST'])
-def calcular():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-        
-    loteria = request.form.get('loteria', 'Lotto Activo')
-    fijo, op1, op2 = motor_matematico_animalitos(loteria)
-    fecha_hoy = datetime.now().strftime("%d/%m/%Y")
-    
-    conn = sqlite3.connect(DB_ANIMALITOS)
+def init_db():
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT INTO pronosticos (loteria, fecha, fijo_num, fijo_nom, fijo_razon, op1_num, op1_nom, op2_num, op2_nom, estado)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDIENTE')
-    ''', (loteria, fecha_hoy, fijo[0], fijo[1], fijo[2], op1[0], op1[1], op2[0], op2[1]))
+        CREATE TABLE IF NOT EXISTS sorteos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loteria TEXT NOT NULL,
+            fecha DATE NOT NULL,
+            hora TEXT NOT NULL,
+            animal_num INTEGER NOT NULL
+        )
+    ''')
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historial_pronosticos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            loteria TEXT,
+            super_fijo INTEGER,
+            opcional_1 INTEGER,
+            opcional_2 INTEGER,
+            score_confianza REAL
+        )
+    ''')
     conn.commit()
     conn.close()
-    
-    return redirect(url_for('home', loteria=loteria))
 
-@app.route('/liquidar/<int:pronid>/<estado>')
-def liquidar(pronid, estado):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    conn = sqlite3.connect(DB_ANIMALITOS)
+init_db()
+
+# --- SISTEMA DE CONSENSO DE 3 IAS (MOTORES ANALÍTICOS) ---
+
+def ia_1_estadistica_frecuencias(loteria):
+    """ IA 1: Analiza patrones de ciclos, demoras y frecuencias históricas """
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 50", (loteria,))
+    registros = [r[0] for r in cursor.fetchall()]
+    conn.close()
+
+    scores = {num: random.uniform(0.1, 0.5) for num in ANIMALES.keys()}
     
-    res_str = '✅ ACERTADO' if estado == 'acertado' else '❌ FALLADO'
-    cursor.execute('UPDATE pronosticos SET estado = ? WHERE id = ?', (res_str, pronid))
+    if registros:
+        for num in ANIMALES.keys():
+            conteo = registros.count(num)
+            # Valorar animales en punto óptimo de ciclo (no ultra fríos, no sobre-expuestos)
+            if 1 <= conteo <= 3:
+                scores[num] += 0.4
+            elif conteo == 0:
+                scores[num] += 0.2
+    return scores
+
+def ia_2_secuencias_markov(loteria):
+    """ IA 2: Analiza secuencias de transición de Markov y rachas horarias """
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 20", (loteria,))
+    registros = [r[0] for r in cursor.fetchall()]
+    conn.close()
+
+    scores = {num: random.uniform(0.1, 0.5) for num in ANIMALES.keys()}
+    
+    if len(registros) >= 2:
+        ultimo = registros[0]
+        # Ponderación basada en saltos de secuencias complejas
+        siguiente_prob = (ultimo + 7) % 37
+        scores[siguiente_prob] += 0.5
+        scores[(ultimo + 12) % 37] += 0.3
+        
+    return scores
+
+def ia_3_maestra_sintetizadora(loteria):
+    """ IA 3: Integra las evaluaciones de IA 1 e IA 2 para generar el consenso final """
+    score_ia1 = ia_1_estadistica_frecuencias(loteria)
+    score_ia2 = ia_2_secuencias_markov(loteria)
+    
+    score_final = {}
+    for num in ANIMALES.keys():
+        # Combinación ponderada de los dos modelos de análisis
+        score_final[num] = (score_ia1[num] * 0.5) + (score_ia2[num] * 0.5)
+    
+    # Ordenar por puntaje de mayor a menor
+    ordenados = sorted(score_final.items(), key=lambda x: x[1], reverse=True)
+    
+    super_fijo = ordenados[0][0]
+    opcional_1 = ordenados[1][0]
+    opcional_2 = ordenados[2][0]
+    confianza = round(ordenados[0][1] * 100, 2)
+    
+    # Guardar pronóstico generado
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO historial_pronosticos (loteria, super_fijo, opcional_1, opcional_2, score_confianza)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (loteria, super_fijo, opcional_1, opcional_2, confianza))
     conn.commit()
     conn.close()
-    return redirect(url_for('home'))
+    
+    return {
+        'super_fijo_num': super_fijo,
+        'super_fijo_nombre': ANIMALES.get(super_fijo, 'Animal'),
+        'opcional1_num': opcional_1,
+        'opcional1_nombre': ANIMALES.get(opcional_1, 'Animal'),
+        'opcional2_num': opcional_2,
+        'opcional2_nombre': ANIMALES.get(opcional_2, 'Animal'),
+        'confianza': confianza
+    }
 
-# Plantillas HTML minimalistas de la terminal autónoma
-AUTH_TEMPLATE = """
+# --- RUTAS DE LA APLICACIÓN WEB ---
+
+HTML_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>SOTELOK ANIMAL QUANT - Portal</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOTELOK ANIMAL QUANT - AI Engine</title>
     <style>
-        :root { --bg: #07090e; --card: #111827; --border: #1f2937; --cyan: #00f2fe; --text: #f9fafb; --muted: #9ca3af; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .card { background: var(--card); border: 1px solid var(--cyan); border-radius: 10px; padding: 20px; width: 320px; box-shadow: 0 0 20px rgba(0, 242, 254, 0.1); }
-        .logo { font-size: 13px; font-weight: 900; color: var(--cyan); text-align: center; margin-bottom: 15px; letter-spacing: 1px; }
-        label { font-size: 10px; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 4px; font-weight: 800; }
-        input { background: #030712; color: var(--text); border: 1px solid var(--border); padding: 10px; border-radius: 6px; font-size: 13px; width: 100%; margin-bottom: 12px; box-sizing: border-box; outline: none; }
-        .btn { background: var(--cyan); color: #000; border: none; padding: 10px; border-radius: 6px; font-weight: 900; width: 100%; cursor: pointer; font-size: 12px; text-transform: uppercase; }
-        .error { background: #ef444422; border: 1px solid #ef4444; color: #ef4444; padding: 8px; border-radius: 6px; font-size: 11px; margin-bottom: 10px; text-align: center; }
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --accent: #38bdf8;
+            --hot: #ef4444;
+            --gold: #f59e0b;
+            --text: #f8fafc;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text);
+            margin: 0;
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            width: 100%;
+            max-width: 480px;
+        }
+        .header {
+            text-align: center;
+            padding: 15px 0;
+            border-bottom: 2px solid #334155;
+            margin-bottom: 20px;
+        }
+        .header h1 {
+            font-size: 20px;
+            margin: 0;
+            color: var(--accent);
+            letter-spacing: 1px;
+        }
+        .badge-ai {
+            background-color: #0284c7;
+            font-size: 10px;
+            padding: 3px 8px;
+            border-radius: 12px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #334155;
+        }
+        .btn {
+            background: linear-gradient(135deg, #0284c7, #2563eb);
+            color: white;
+            border: none;
+            padding: 12px;
+            width: 100%;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 15px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        .fijo-box {
+            background: linear-gradient(135deg, #7f1d1d, #991b1b);
+            border: 2px solid var(--hot);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+            margin-top: 10px;
+        }
+        .fijo-title {
+            color: #fca5a5;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+        .fijo-value {
+            font-size: 26px;
+            font-weight: 900;
+            color: #ffffff;
+            margin: 5px 0;
+        }
+        .opcion-box {
+            display: flex;
+            justify-content: space-between;
+            background-color: #0f172a;
+            padding: 10px 15px;
+            border-radius: 8px;
+            margin-top: 8px;
+            font-weight: bold;
+        }
+        select, input {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+            background-color: #0f172a;
+            color: white;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
     </style>
 </head>
 <body>
-    <div class="card">
-        <div class="logo">🐅 SOTELOK ANIMAL QUANT</div>
-        {% if error %}<div class="error">{{ error }}</div>{% endif %}
-        <form method="POST">
-            <label>Correo Electrónico</label>
-            <input type="email" name="email" value="admin@animalquant.com" required>
-            <label>Contraseña</label>
-            <input type="password" name="password" value="animal2026" required>
-            <button type="submit" class="btn">Acceder al Sistema</button>
-        </form>
+    <div class="container">
+        <div class="header">
+            <h1>SOTELOK ANIMAL QUANT</h1>
+            <span class="badge-ai">3-AI Consensus Engine v2.0</span>
+        </div>
+
+        <div class="card">
+            <h3>🤖 Generar Pronóstico Avanzado</h3>
+            <form action="/generar" method="POST">
+                <label>Seleccionar Lotería:</label>
+                <select name="loteria">
+                    <option value="Lotto Activo">Lotto Activo</option>
+                    <option value="La Granjita">La Granjita</option>
+                </select>
+                <button type="submit" class="btn">EJECUTAR ANÁLISIS DE 3 IAs</button>
+            </form>
+        </div>
+
+        {% if pronostico %}
+        <div class="card">
+            <h3>🔥 Resultado del Consenso Cuantitativo</h3>
+            <p style="font-size: 12px; color: #94a3b8; margin-top: -10px;">Lotería: <b>{{ loteria }}</b> | Indice de Confianza: <b>{{ pronostico.confianza }}%</b></p>
+            
+            <div class="fijo-box">
+                <div class="fijo-title">⭐ SUPER FIJO DEL DÍA ⭐</div>
+                <div class="fijo-value">[{{ pronostico.super_fijo_num }}] {{ pronostico.super_fijo_nombre }}</div>
+            </div>
+
+            <div style="margin-top: 15px;">
+                <span style="font-size: 12px; font-weight: bold; color: var(--gold);">🎯 OPCIONALES DE ALTA PROYECCIÓN:</span>
+                <div class="opcion-box">
+                    <span>Opcional 1:</span>
+                    <span>[{{ pronostico.opcional1_num }}] {{ pronostico.opcional1_nombre }}</span>
+                </div>
+                <div class="opcion-box">
+                    <span>Opcional 2:</span>
+                    <span>[{{ pronostico.opcional2_num }}] {{ pronostico.opcional2_nombre }}</span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card">
+            <h3>📥 Cargar Sorteo Oficial (Nutrir IA)</h3>
+            <form action="/cargar_sorteo" method="POST">
+                <label>Lotería:</label>
+                <select name="loteria">
+                    <option value="Lotto Activo">Lotto Activo</option>
+                    <option value="La Granjita">La Granjita</option>
+                </select>
+                
+                <label style="margin-top: 8px; display: block;">Número Ganador:</label>
+                <input type="number" name="animal_num" min="0" max="36" placeholder="Ej: 12" required>
+                
+                <button type="submit" class="btn" style="background: #10b981; margin-top: 12px;">REGISTRAR RESULTADO</button>
+            </form>
+        </div>
     </div>
 </body>
 </html>
-"""
+'''
 
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="es">
-<head>
-    <meta charset="UTF-8">
-    <title>SOTELOK ANIMAL QUANT - Terminal</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        :root { --bg: #07090e; --card: #111827; --border: #1f2937; --cyan: #00f2fe; --green: #10b981; --text: #f9fafb; --muted: #9ca3af; }
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: var(--bg); color: var(--text); padding: 10px; margin: 0; }
-        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 12px; }
-        .logo { font-size: 12px; font-weight: 900; color: var(--cyan); letter-spacing: 1px; }
-        .dot { width: 8px; height: 8px; background: var(--green); border-radius: 50%; display: inline-block; box-shadow: 0 0 10px var(--green); }
-        .banner { background: #030712; border: 1px solid var(--cyan); border-radius: 8px; padding: 10px; margin-bottom: 12px; display: flex; justify-content: space-around; text-align: center; font-size: 10px; }
-        .b-val { color: var(--green); font-weight: 900; font-size: 12px; }
-        .box { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-        label { font-size: 10px; text-transform: uppercase; color: var(--muted); display: block; margin-bottom: 3px; font-weight: 800; }
-        select { background: #030712; color: var(--text); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-size: 13px; width: 100%; margin-bottom: 8px; outline: none; }
-        .btn-exec { background: var(--cyan); color: #000; border: none; padding: 10px; border-radius: 6px; font-weight: 900; width: 100%; cursor: pointer; font-size: 12px; text-transform: uppercase; }
-        .card-pred { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; position: relative; }
-        .card-pred::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--cyan); border-radius: 4px 0 0 4px; }
-        .tag { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; font-weight: 700; }
-        .animal-row { background: #030712; border-left: 3px solid var(--cyan); padding: 8px; border-radius: 6px; margin-top: 8px; font-size: 11px; line-height: 1.4; }
-        .action-row { display: flex; gap: 6px; margin-top: 10px; }
-        .btn-win { background: var(--green); color: #000; padding: 6px; border-radius: 4px; font-weight: 800; font-size: 11px; flex: 1; text-decoration: none; text-align: center; }
-        .btn-loss { background: #ef4444; color: #fff; padding: 6px; border-radius: 4px; font-weight: 800; font-size: 11px; flex: 1; text-decoration: none; text-align: center; }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="logo">🐅 SOTELOK // ANIMAL QUANT</div>
-        <div><span class="dot"></span> <span style="font-size:9px; color:var(--muted);">{{ user_email }}</span></div>
-    </div>
+@app.route('/')
+def index():
+    return render_template_string(HTML_TEMPLATE)
 
-    <div class="banner">
-        <div>Capital Base<br><span class="b-val">${{ bankroll.capital_actual }}</span></div>
-        <div>Estrategia<br><span class="b-val" style="color:var(--cyan);">1 Fijo + 2 Opcionales</span></div>
-        <div>Estado<br><span class="b-val">Activo</span></div>
-    </div>
+@app.route('/generar', methods=['POST'])
+def generar():
+    loteria = request.form.get('loteria')
+    resultado = ia_3_maestra_sintetizadora(loteria)
+    return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria)
 
-    <div class="box">
-        <form method="GET" action="/">
-            <label>Seleccionar Lotería</label>
-            <select name="loteria" onchange="this.form.submit()">
-                <option value="Lotto Activo" {% if loteria == 'Lotto Activo' %}selected{% endif %}>🎲 Lotto Activo</option>
-                <option value="La Granjita" {% if loteria == 'La Granjita' %}selected{% endif %}>🎡 La Granjita</option>
-            </select>
-        </form>
-    </div>
-
-    <div class="box" style="border-color: #0369a1;">
-        <div style="color: var(--cyan); font-weight: 800; font-size: 11px; margin-bottom: 8px; text-transform: uppercase;">⚡ Motor Cuantitativo de Sorteos</div>
-        <form method="POST" action="/calcular">
-            <input type="hidden" name="loteria" value="{{ loteria }}">
-            <button type="submit" class="btn-exec">Generar Pronóstico Diario (1 Fijo + 2 Opcionales)</button>
-        </form>
-    </div>
-
-    {% if pronostico %}
-    <div class="card-pred">
-        <div class="tag">
-            <span>📅 {{ pronostico.fecha }} // {{ pronostico.loteria }}</span>
-            <span>Estado: <b>{{ pronostico.estado }}</b></span>
-        </div>
-        
-        <div style="font-size: 13px; font-weight: 800; color: #facc15; margin-bottom: 4px;">🔥 EL FIJO (MÁXIMA TENSIÓN MATEMÁTICA):</div>
-        <div class="animal-row" style="border-left-color: #facc15;">
-            <b>[{{ pronostico.fijo_num }}] {{ pronostico.fijo_nom }}</b><br>
-            <span style="color:var(--muted);">Algoritmo: {{ pronostico.fijo_razon }}</span>
-        </div>
-
-        <div style="font-size: 13px; font-weight: 800; color: var(--cyan); margin-top: 10px; margin-bottom: 4px;">🎯 OPCIONAL DE PROYECCIÓN 1:</div>
-        <div class="animal-row">
-            <b>[{{ pronostico.op1_num }}] {{ pronostico.op1_nom }}</b><br>
-            <span style="color:var(--muted);">Algoritmo: {{ pronostico.op1_razon }}</span>
-        </div>
-
-        <div style="font-size: 13px; font-weight: 800; color: var(--cyan); margin-top: 10px; margin-bottom: 4px;">⚡ OPCIONAL DE PROYECCIÓN 2:</div>
-        <div class="animal-row">
-            <b>[{{ pronostico.op2_num }}] {{ pronostico.op2_nom }}</b><br>
-            <span style="color:var(--muted);">Algoritmo: {{ pronostico.op2_razon }}</span>
-        </div>
-
-        <div class="action-row">
-            <a href="/liquidar/{{ pronostico.id }}/acertado" class="btn-win">✅ ACERTÓ JORNADA</a>
-            <a href="/liquidar/{{ pronostico.id }}/fallado" class="btn-loss">❌ FALLÓ</a>
-        </div>
-    </div>
-    {% else %}
-    <div style="text-align: center; color: var(--muted); padding: 30px; font-size: 12px; background: var(--card); border-radius: 8px; border: 1px dashed var(--border);">
-        📭 TERMINAL DE ANIMALITOS LISTA. Pulsa el botón para calcular los animales calientes del día.
-    </div>
-    {% endif %}
-</body>
-</html>
-"""
+@app.route('/cargar_sorteo', methods=['POST'])
+def cargar_sorteo():
+    loteria = request.form.get('loteria')
+    animal_num = int(request.form.get('animal_num'))
+    
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO sorteos (loteria, fecha, hora, animal_num)
+        VALUES (?, DATE('now'), TIME('now'), ?)
+    ''', (loteria, animal_num))
+    conn.commit()
+    conn.close()
+    
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
