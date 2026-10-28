@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import random
-from flask import Flask, request, jsonify, render_template_string, redirect, url_for, session
+from flask import Flask, request, render_template_string, redirect, url_for
 
 app = Flask(__name__)
 app.secret_key = 'sotelok_animal_quant_secret_key_2026'
@@ -14,7 +14,7 @@ ANIMALES = {
     5: 'León', 6: 'Rana', 7: 'Perico', 8: 'Ratón', 9: 'Águila', 10: 'Tigre',
     11: 'Gato', 12: 'Caballo', 13: 'Mono', 14: 'Paloma', 15: 'Zorro', 16: 'Oso',
     17: 'Pavo', 18: 'Burro', 19: 'Chivo', 20: 'Cochino', 21: 'Gallo', 22: 'Camello',
-    23: 'Cebra', 24: 'Iguana', 25: 'G统计', 26: 'Vaca', 27: 'Perro', 28: 'Zamuro',
+    23: 'Cebra', 24: 'Iguana', 25: 'Gallina', 26: 'Vaca', 27: 'Perro', 28: 'Zamuro',
     29: 'Elefante', 30: 'Caimán', 31: 'Lapa', 32: 'Ardilla', 33: 'Pescado',
     34: 'Venado', 35: 'Jirafa', 36: 'Culebra'
 }
@@ -50,7 +50,6 @@ init_db()
 # --- SISTEMA DE CONSENSO DE 3 IAS (MOTORES ANALÍTICOS) ---
 
 def ia_1_estadistica_frecuencias(loteria):
-    """ IA 1: Analiza patrones de ciclos, demoras y frecuencias históricas """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 50", (loteria,))
@@ -62,7 +61,6 @@ def ia_1_estadistica_frecuencias(loteria):
     if registros:
         for num in ANIMALES.keys():
             conteo = registros.count(num)
-            # Valorar animales en punto óptimo de ciclo (no ultra fríos, no sobre-expuestos)
             if 1 <= conteo <= 3:
                 scores[num] += 0.4
             elif conteo == 0:
@@ -70,7 +68,6 @@ def ia_1_estadistica_frecuencias(loteria):
     return scores
 
 def ia_2_secuencias_markov(loteria):
-    """ IA 2: Analiza secuencias de transición de Markov y rachas horarias """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 20", (loteria,))
@@ -81,7 +78,6 @@ def ia_2_secuencias_markov(loteria):
     
     if len(registros) >= 2:
         ultimo = registros[0]
-        # Ponderación basada en saltos de secuencias complejas
         siguiente_prob = (ultimo + 7) % 37
         scores[siguiente_prob] += 0.5
         scores[(ultimo + 12) % 37] += 0.3
@@ -89,16 +85,13 @@ def ia_2_secuencias_markov(loteria):
     return scores
 
 def ia_3_maestra_sintetizadora(loteria):
-    """ IA 3: Integra las evaluaciones de IA 1 e IA 2 para generar el consenso final """
     score_ia1 = ia_1_estadistica_frecuencias(loteria)
     score_ia2 = ia_2_secuencias_markov(loteria)
     
     score_final = {}
     for num in ANIMALES.keys():
-        # Combinación ponderada de los dos modelos de análisis
         score_final[num] = (score_ia1[num] * 0.5) + (score_ia2[num] * 0.5)
     
-    # Ordenar por puntaje de mayor a menor
     ordenados = sorted(score_final.items(), key=lambda x: x[1], reverse=True)
     
     super_fijo = ordenados[0][0]
@@ -106,7 +99,6 @@ def ia_3_maestra_sintetizadora(loteria):
     opcional_2 = ordenados[2][0]
     confianza = round(ordenados[0][1] * 100, 2)
     
-    # Guardar pronóstico generado
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
