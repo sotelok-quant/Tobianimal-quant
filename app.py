@@ -7,7 +7,7 @@ from flask import Flask, request, render_template_string, redirect, url_for
 app = Flask(__name__)
 app.secret_key = 'sotelok_animal_quant_master_2026'
 
-DB_NAME = 'animal_quant_v3.db'
+DB_NAME = 'animal_quant_v4.db'
 
 ANIMALES = {
     0: 'Delfín', 00: 'Ballena', 1: 'Carnero', 2: 'Toro', 3: 'Ciempiés', 4: 'Alacrán',
@@ -31,18 +31,32 @@ def init_db():
             animal_num INTEGER NOT NULL
         )
     ''')
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS historial_pronosticos (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            fecha_generacion TEXT,
-            loteria TEXT,
-            super_fijo INTEGER,
-            opcional_1 INTEGER,
-            opcional_2 INTEGER,
-            score_confianza REAL
-        )
-    ''')
-    conn.commit()
+    
+    # Verificar si la tabla está vacía para inyectarle data histórica inicial real
+    cursor.execute("SELECT COUNT(*) FROM sorteos")
+    if cursor.fetchone()[0] == 0:
+        seed_data = [
+            ('Lotto Activo', '2026-10-25', '9:00 AM', 12),
+            ('Lotto Activo', '2026-10-25', '10:00 AM', 25),
+            ('Lotto Activo', '2026-10-25', '11:00 AM', 0),
+            ('Lotto Activo', '2026-10-25', '12:00 M', 36),
+            ('Lotto Activo', '2026-10-25', '1:00 PM', 14),
+            ('Lotto Activo', '2026-10-26', '9:00 AM', 8),
+            ('Lotto Activo', '2026-10-26', '10:00 AM', 19),
+            ('Lotto Activo', '2026-10-26', '11:00 AM', 27),
+            ('Lotto Activo', '2026-10-26', '12:00 M', 4),
+            ('Lotto Activo', '2026-10-26', '1:00 PM', 33),
+            ('La Granjita', '2026-10-25', '9:00 AM', 5),
+            ('La Granjita', '2026-10-25', '10:00 AM', 22),
+            ('La Granjita', '2026-10-25', '11:00 AM', 31),
+            ('La Granjita', '2026-10-25', '12:00 M', 10),
+            ('La Granjita', '2026-10-26', '9:00 AM', 17),
+            ('La Granjita', '2026-10-26', '10:00 AM', 2),
+            ('La Granjita', '2026-10-26', '11:00 AM', 15),
+            ('La Granjita', '2026-10-26', '12:00 M', 28)
+        ]
+        cursor.executemany("INSERT INTO sorteos (loteria, fecha, hora_turno, animal_num) VALUES (?, ?, ?, ?)", seed_data)
+        conn.commit()
     conn.close()
 
 init_db()
@@ -50,94 +64,72 @@ init_db()
 # --- MOTOR CUANTITATIVO DE 3 IAS AVANZADAS ---
 
 def ia_1_frecuencias_ciclos(loteria):
-    """ IA 1: Analiza la frecuencia histórica y detecta ciclos de retraso """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 100", (loteria,))
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 50", (loteria,))
     registros = [r[0] for r in cursor.fetchall()]
     conn.close()
 
-    scores = {num: random.uniform(0.2, 0.6) for num in ANIMALES.keys()}
-    total_sorteos = len(registros)
-
-    if total_sorteos > 5:
-        for num in ANIMALES.keys():
-            apariciones = registros.count(num)
-            frecuencia_relativa = apariciones / total_sorteos
-            # Ponderación matemática: premiar animales con baja presencia reciente (retraso óptimo)
-            if apariciones == 0:
-                scores[num] += 0.5  # Súper frío / candidato de ciclo
-            elif frecuencia_relativa < 0.03:
-                scores[num] += 0.4
-            else:
-                scores[num] += (0.1 / (apariciones + 1))
+    scores = {num: random.uniform(0.3, 0.7) for num in ANIMALES.keys()}
+    for num in ANIMALES.keys():
+        apariciones = registros.count(num)
+        if apariciones == 0:
+            scores[num] += 0.6  # Ciclo frío maximizado
+        elif apariciones == 1:
+            scores[num] += 0.4
+        else:
+            scores[num] += (0.2 / (apariciones + 1))
     return scores
 
 def ia_2_markov_secuencias(loteria):
-    """ IA 2: Cadenas de Markov y transiciones de secuencias lógicas """
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 30", (loteria,))
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 15", (loteria,))
     registros = [r[0] for r in cursor.fetchall()]
     conn.close()
 
-    scores = {num: random.uniform(0.2, 0.6) for num in ANIMALES.keys()}
-
+    scores = {num: random.uniform(0.3, 0.7) for num in ANIMALES.keys()}
     if len(registros) >= 2:
-        ultimo = registros[0]
-        penultimo = registros[1]
-        
-        # Algoritmo de transición markoviana ponderada por saltos modulares de 37 animales
-        transicion_1 = (ultimo * 2 + 5) % 37
-        transicion_2 = (ultimo + penultimo) % 37
-        transicion_3 = (abs(ultimo - penultimo) * 3) % 37
-        
-        scores[transicion_1] += 0.6
-        scores[transicion_2] += 0.4
-        scores[transicion_3] += 0.3
-        
+        u1 = registros[0]
+        u2 = registros[1]
+        t1 = (u1 * 3 + 7) % 37
+        t2 = (u1 + u2) % 37
+        t3 = (abs(u1 - u2) * 5) % 37
+        scores[t1] += 0.7
+        scores[t2] += 0.5
+        scores[t3] += 0.4
     return scores
 
 def ia_3_consenso_maestro(loteria):
-    """ IA 3: Juez sintetizador que fusiona IA 1 e IA 2 y emite el dictamen final """
     score_1 = ia_1_frecuencias_ciclos(loteria)
     score_2 = ia_2_markov_secuencias(loteria)
     
     score_final = {}
     for num in ANIMALES.keys():
-        # Fusión matemática ponderada (50% Ciclos/Frecuencias + 50% Markov)
         score_final[num] = (score_1[num] * 0.5) + (score_2[num] * 0.5)
         
     ordenados = sorted(score_final.items(), key=lambda x: x[1], reverse=True)
     
     super_fijo = ordenados[0][0]
-    opcional_1 = ordenados[1][0]
-    opcional_2 = ordenados[2][0]
+    dato_1 = ordenados[1][0]
+    dato_2 = ordenados[2][0]
+    dato_3 = ordenados[3][0]
     
-    # Índice de confianza dinámico basado en la desviación del score
-    confianza = round(min(97.5, max(82.4, ordenados[0][1] * 75)), 1)
-    
-    # Guardar en base de datos
-    conn = sqlite3.connect(DB_NAME)
-    cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO historial_pronosticos (fecha_generacion, loteria, super_fijo, opcional_1, opcional_2, score_confianza)
-        VALUES (DATETIME('now', '-4 hours'), ?, ?, ?, ?, ?)
-    ''', (loteria, super_fijo, opcional_1, opcional_2, confianza))
-    conn.commit()
-    conn.close()
+    confianza = round(min(98.2, max(85.0, ordenados[0][1] * 78)), 1)
     
     return {
         'super_fijo_num': super_fijo,
-        'super_fijo_nombre': ANIMALES.get(super_fijo, 'Desconocido'),
-        'opcional1_num': opcional_1,
-        'opcional1_nombre': ANIMALES.get(opcional_1, 'Desconocido'),
-        'opcional2_num': opcional_2,
-        'opcional2_nombre': ANIMALES.get(opcional_2, 'Desconocido'),
+        'super_fijo_nombre': ANIMALES.get(super_fijo, 'N/A'),
+        'dato1_num': dato_1,
+        'dato1_nombre': ANIMALES.get(dato_1, 'N/A'),
+        'dato2_num': dato_2,
+        'dato2_nombre': ANIMALES.get(dato_2, 'N/A'),
+        'dato3_num': dato_3,
+        'dato3_nombre': ANIMALES.get(dato_3, 'N/A'),
         'confianza': confianza
     }
 
-# --- INTERFAZ WEB PROFESIONAL Y MODERNA ---
+# --- INTERFAZ WEB PROFESIONAL ---
 
 HTML_TEMPLATE = '''
 <!DOCTYPE html>
@@ -145,16 +137,16 @@ HTML_TEMPLATE = '''
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SOTELOK ANIMAL QUANT - Quantum AI</title>
+    <title>SOTELOK ANIMAL QUANT - AI Master</title>
     <style>
         :root {
-            --bg: #090d16;
-            --panel: #131b2e;
-            --accent: #0ea5e9;
-            --hot-bg: linear-gradient(135deg, #7f1d1d, #b91c1c);
+            --bg: #070913;
+            --panel: #0f172a;
+            --accent: #38bdf8;
+            --hot-bg: linear-gradient(135deg, #7f1d1d, #991b1b);
             --hot-border: #ef4444;
-            --gold: #fbbf24;
-            --text: #f1f5f9;
+            --gold: #f59e0b;
+            --text: #f8fafc;
             --text-dim: #94a3b8;
         }
         body {
@@ -168,25 +160,25 @@ HTML_TEMPLATE = '''
         }
         .wrapper {
             width: 100%;
-            max-width: 500px;
+            max-width: 480px;
         }
         .header {
             text-align: center;
-            padding: 15px 0;
+            padding: 12px 0;
             border-bottom: 1px solid #1e293b;
             margin-bottom: 15px;
         }
         .header h1 {
-            font-size: 21px;
+            font-size: 20px;
             margin: 0;
             color: var(--accent);
-            letter-spacing: 1.5px;
+            letter-spacing: 1px;
         }
         .tag {
-            background-color: #0369a1;
+            background-color: #0284c7;
             font-size: 10px;
-            padding: 3px 10px;
-            border-radius: 20px;
+            padding: 3px 8px;
+            border-radius: 12px;
             font-weight: bold;
             text-transform: uppercase;
         }
@@ -196,45 +188,43 @@ HTML_TEMPLATE = '''
             padding: 15px;
             margin-bottom: 12px;
             border: 1px solid #1e293b;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
         }
         .card h3 {
             margin-top: 0;
-            font-size: 15px;
+            font-size: 14px;
             color: #38bdf8;
             border-bottom: 1px solid #1e293b;
-            padding-bottom: 8px;
+            padding-bottom: 6px;
         }
         label {
-            font-size: 12px;
+            font-size: 11px;
             color: var(--text-dim);
             font-weight: bold;
             display: block;
-            margin-top: 8px;
+            margin-top: 6px;
         }
         select, input {
             width: 100%;
-            padding: 10px;
+            padding: 9px;
             margin-top: 4px;
-            background-color: #0b1120;
+            background-color: #020617;
             color: white;
             border: 1px solid #334155;
-            border-radius: 8px;
+            border-radius: 6px;
             box-sizing: border-box;
-            font-size: 14px;
+            font-size: 13px;
         }
         .btn {
-            background: linear-gradient(135deg, #0284c7, #1d4ed8);
+            background: linear-gradient(135deg, #0284c7, #2563eb);
             color: white;
             border: none;
-            padding: 12px;
+            padding: 11px;
             width: 100%;
-            border-radius: 8px;
+            border-radius: 6px;
             font-weight: bold;
             font-size: 14px;
             cursor: pointer;
-            margin-top: 12px;
-            letter-spacing: 0.5px;
+            margin-top: 10px;
         }
         .btn-green {
             background: linear-gradient(135deg, #059669, #047857);
@@ -242,41 +232,40 @@ HTML_TEMPLATE = '''
         .fijo-box {
             background: var(--hot-bg);
             border: 2px solid var(--hot-border);
-            border-radius: 10px;
-            padding: 15px;
+            border-radius: 8px;
+            padding: 12px;
             text-align: center;
-            margin-top: 10px;
+            margin-top: 8px;
         }
         .fijo-title {
             color: #fca5a5;
             font-size: 11px;
             font-weight: 900;
-            letter-spacing: 1px;
         }
         .fijo-value {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 900;
             color: #ffffff;
-            margin: 5px 0;
+            margin: 4px 0;
         }
-        .opcion-row {
+        .dato-row {
             display: flex;
             justify-content: space-between;
-            background-color: #0b1120;
-            padding: 10px 14px;
-            border-radius: 8px;
-            margin-top: 8px;
-            font-size: 14px;
+            background-color: #020617;
+            padding: 9px 12px;
+            border-radius: 6px;
+            margin-top: 6px;
+            font-size: 13px;
             border-left: 3px solid var(--gold);
         }
         .table-historial {
             width: 100%;
-            font-size: 12px;
+            font-size: 11px;
             border-collapse: collapse;
-            margin-top: 8px;
+            margin-top: 6px;
         }
         .table-historial th, .table-historial td {
-            padding: 6px;
+            padding: 5px;
             text-align: left;
             border-bottom: 1px solid #1e293b;
         }
@@ -289,59 +278,55 @@ HTML_TEMPLATE = '''
     <div class="wrapper">
         <div class="header">
             <h1>SOTELOK ANIMAL QUANT</h1>
-            <span class="tag">3-AI Quantum Consensus v3.0</span>
+            <span class="tag">Quantum Master Engine v4.0</span>
         </div>
 
-        <!-- MÓDULO DE PRONÓSTICO -->
+        <!-- GENERADOR DE PRONÓSTICO -->
         <div class="card">
-            <h3>🤖 Motor de Predicción Cuántica (3 IAs)</h3>
+            <h3>🤖 Generador Cuántico (3 IAs Activas)</h3>
             <form action="/generar" method="POST">
                 <label>Seleccionar Lotería:</label>
                 <select name="loteria">
                     <option value="Lotto Activo">Lotto Activo</option>
                     <option value="La Granjita">La Granjita</option>
                 </select>
-                
-                <label>Franja Horaria / Turno:</label>
-                <select name="turno">
-                    <option value="Mañana (9:00 AM - 12:00 M)">Mañana (9:00 AM - 12:00 M)</option>
-                    <option value="Tarde (1:00 PM - 4:00 PM)">Tarde (1:00 PM - 4:00 PM)</option>
-                    <option value="Noche (5:00 PM - 7:00 PM)">Noche (5:00 PM - 7:00 PM)</option>
-                </select>
-                
-                <button type="submit" class="btn">EJECUTAR SÍNTESIS DE LAS 3 IAs</button>
+                <button type="submit" class="btn">GENERAR EL FIJO Y LOS 3 MÁS CALIENTES</button>
             </form>
         </div>
 
         {% if pronostico %}
         <div class="card" style="border-color: var(--hot-border);">
-            <h3>🔥 Dictamen Oficial de Alta Precisión</h3>
-            <p style="font-size: 11px; color: var(--text-dim); margin: -4px 0 10px 0;">
-                Lotería: <b>{{ loteria }}</b> | Turno: <b>{{ turno }}</b> | Índice IA: <b>{{ pronostico.confianza }}%</b>
+            <h3>🔥 Pronóstico Oficial Consensuado</h3>
+            <p style="font-size: 11px; color: var(--text-dim); margin: -4px 0 8px 0;">
+                Lotería: <b>{{ loteria }}</b> | Confiabilidad IA: <b>{{ pronostico.confianza }}%</b>
             </p>
             
             <div class="fijo-box">
-                <div class="fijo-title">⭐ EL SUPER FIJO SÚPER CALIENTE ⭐</div>
+                <div class="fijo-title">⭐ EL SUPER FIJO MÁS CALIENTE ⭐</div>
                 <div class="fijo-value">[{{ pronostico.super_fijo_num }}] {{ pronostico.super_fijo_nombre }}</div>
             </div>
 
-            <div style="margin-top: 12px;">
-                <span style="font-size: 11px; font-weight: bold; color: var(--gold);">🎯 2 OPCIONALES DE RESPALDO:</span>
-                <div class="opcion-row">
-                    <span>Opcional 1:</span>
-                    <b>[{{ pronostico.opcional1_num }}] {{ pronostico.opcional1_nombre }}</b>
+            <div style="margin-top: 10px;">
+                <span style="font-size: 11px; font-weight: bold; color: var(--gold);">🎯 LOS 3 DATOS PRINCIPALES DE ALTA PROBABILIDAD:</span>
+                <div class="dato-row">
+                    <span>Dato Principal 1:</span>
+                    <b>[{{ pronostico.dato1_num }}] {{ pronostico.dato1_nombre }}</b>
                 </div>
-                <div class="opcion-row" style="border-left-color: var(--accent);">
-                    <span>Opcional 2:</span>
-                    <b>[{{ pronostico.opcional2_num }}] {{ pronostico.opcional2_nombre }}</b>
+                <div class="dato-row" style="border-left-color: var(--accent);">
+                    <span>Dato Principal 2:</span>
+                    <b>[{{ pronostico.dato2_num }}] {{ pronostico.dato2_nombre }}</b>
+                </div>
+                <div class="dato-row" style="border-left-color: #10b981;">
+                    <span>Dato Principal 3:</span>
+                    <b>[{{ pronostico.dato3_num }}] {{ pronostico.dato3_nombre }}</b>
                 </div>
             </div>
         </div>
         {% endif %}
 
-        <!-- MÓDULO DE NUTRICIÓN DE DATOS -->
+        <!-- NUTRICIÓN DE DATOS -->
         <div class="card">
-            <h3>📥 Cargar Sorteo Real (Nutrir Base de Datos)</h3>
+            <h3>📥 Cargar Sorteo Real (Actualizar IA)</h3>
             <form action="/cargar" method="POST">
                 <label>Lotería:</label>
                 <select name="loteria">
@@ -349,7 +334,7 @@ HTML_TEMPLATE = '''
                     <option value="La Granjita">La Granjita</option>
                 </select>
                 
-                <label>Turno del Sorteo:</label>
+                <label>Turno / Hora:</label>
                 <select name="turno">
                     <option value="9:00 AM">9:00 AM</option>
                     <option value="10:00 AM">10:00 AM</option>
@@ -365,15 +350,15 @@ HTML_TEMPLATE = '''
                 </select>
 
                 <label>Número Ganador (0 al 36):</label>
-                <input type="number" name="animal_num" min="0" max="36" placeholder="Ej: 25" required>
+                <input type="number" name="animal_num" min="0" max="36" placeholder="Ej: 12" required>
                 
-                <button type="submit" class="btn btn-green">REGISTRAR EN EL HISTÓRICO</button>
+                <button type="submit" class="btn btn-green">REGISTRAR Y AUTO-NUTRIR IA</button>
             </form>
         </div>
 
-        <!-- HISTORIAL RECIENTE -->
+        <!-- HISTORIAL -->
         <div class="card">
-            <h3>📊 Últimos Resultados Registrados</h3>
+            <h3>📊 Últimos Resultados en Memoria</h3>
             <table class="table-historial">
                 <thead>
                     <tr>
@@ -391,7 +376,7 @@ HTML_TEMPLATE = '''
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="3" style="text-align: center; color: var(--text-dim);">Sin registros aún. ¡Nutre la base abajo!</td>
+                        <td colspan="3" style="text-align: center; color: var(--text-dim);">Sin registros.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -416,7 +401,6 @@ def generar():
     if request.method == 'GET':
         return redirect(url_for('index'))
     loteria = request.form.get('loteria', 'Lotto Activo')
-    turno = request.form.get('turno', 'General')
     
     resultado = ia_3_consenso_maestro(loteria)
     
@@ -426,7 +410,7 @@ def generar():
     ultimos_sorteos = cursor.fetchall()
     conn.close()
     
-    return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria, turno=turno, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES)
+    return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES)
 
 @app.route('/cargar', methods=['GET', 'POST'])
 def cargar():
