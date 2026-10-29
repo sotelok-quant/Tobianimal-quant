@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import random
+import re
 from datetime import datetime
 from flask import Flask, request, render_template_string, redirect, url_for
 
@@ -31,32 +32,7 @@ def init_db():
             animal_num INTEGER NOT NULL
         )
     ''')
-    
-    # Verificar si la tabla está vacía para inyectarle data histórica inicial real
-    cursor.execute("SELECT COUNT(*) FROM sorteos")
-    if cursor.fetchone()[0] == 0:
-        seed_data = [
-            ('Lotto Activo', '2026-10-25', '9:00 AM', 12),
-            ('Lotto Activo', '2026-10-25', '10:00 AM', 25),
-            ('Lotto Activo', '2026-10-25', '11:00 AM', 0),
-            ('Lotto Activo', '2026-10-25', '12:00 M', 36),
-            ('Lotto Activo', '2026-10-25', '1:00 PM', 14),
-            ('Lotto Activo', '2026-10-26', '9:00 AM', 8),
-            ('Lotto Activo', '2026-10-26', '10:00 AM', 19),
-            ('Lotto Activo', '2026-10-26', '11:00 AM', 27),
-            ('Lotto Activo', '2026-10-26', '12:00 M', 4),
-            ('Lotto Activo', '2026-10-26', '1:00 PM', 33),
-            ('La Granjita', '2026-10-25', '9:00 AM', 5),
-            ('La Granjita', '2026-10-25', '10:00 AM', 22),
-            ('La Granjita', '2026-10-25', '11:00 AM', 31),
-            ('La Granjita', '2026-10-25', '12:00 M', 10),
-            ('La Granjita', '2026-10-26', '9:00 AM', 17),
-            ('La Granjita', '2026-10-26', '10:00 AM', 2),
-            ('La Granjita', '2026-10-26', '11:00 AM', 15),
-            ('La Granjita', '2026-10-26', '12:00 M', 28)
-        ]
-        cursor.executemany("INSERT INTO sorteos (loteria, fecha, hora_turno, animal_num) VALUES (?, ?, ?, ?)", seed_data)
-        conn.commit()
+    conn.commit()
     conn.close()
 
 init_db()
@@ -66,7 +42,8 @@ init_db()
 def ia_1_frecuencias_ciclos(loteria):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 50", (loteria,))
+    # Ventana amplia de 150 registros para capturar los ciclos de los últimos meses
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 150", (loteria,))
     registros = [r[0] for r in cursor.fetchall()]
     conn.close()
 
@@ -74,9 +51,9 @@ def ia_1_frecuencias_ciclos(loteria):
     for num in ANIMALES.keys():
         apariciones = registros.count(num)
         if apariciones == 0:
-            scores[num] += 0.6  # Ciclo frío maximizado
+            scores[num] += 0.8  # Ciclo frío maximizado fuertemente
         elif apariciones == 1:
-            scores[num] += 0.4
+            scores[num] += 0.5
         else:
             scores[num] += (0.2 / (apariciones + 1))
     return scores
@@ -84,7 +61,7 @@ def ia_1_frecuencias_ciclos(loteria):
 def ia_2_markov_secuencias(loteria):
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 15", (loteria,))
+    cursor.execute("SELECT animal_num FROM sorteos WHERE loteria = ? ORDER BY id DESC LIMIT 30", (loteria,))
     registros = [r[0] for r in cursor.fetchall()]
     conn.close()
 
@@ -95,9 +72,9 @@ def ia_2_markov_secuencias(loteria):
         t1 = (u1 * 3 + 7) % 37
         t2 = (u1 + u2) % 37
         t3 = (abs(u1 - u2) * 5) % 37
-        scores[t1] += 0.7
-        scores[t2] += 0.5
-        scores[t3] += 0.4
+        scores[t1] += 0.8
+        scores[t2] += 0.6
+        scores[t3] += 0.5
     return scores
 
 def ia_3_consenso_maestro(loteria):
@@ -115,7 +92,7 @@ def ia_3_consenso_maestro(loteria):
     dato_2 = ordenados[2][0]
     dato_3 = ordenados[3][0]
     
-    confianza = round(min(98.2, max(85.0, ordenados[0][1] * 78)), 1)
+    confianza = round(min(98.5, max(86.0, ordenados[0][1] * 75)), 1)
     
     return {
         'super_fijo_num': super_fijo,
@@ -203,7 +180,7 @@ HTML_TEMPLATE = '''
             display: block;
             margin-top: 6px;
         }
-        select, input {
+        select, input, textarea {
             width: 100%;
             padding: 9px;
             margin-top: 4px;
@@ -228,6 +205,9 @@ HTML_TEMPLATE = '''
         }
         .btn-green {
             background: linear-gradient(135deg, #059669, #047857);
+        }
+        .btn-purple {
+            background: linear-gradient(135deg, #7c3aed, #4f46e5);
         }
         .fijo-box {
             background: var(--hot-bg);
@@ -278,7 +258,7 @@ HTML_TEMPLATE = '''
     <div class="wrapper">
         <div class="header">
             <h1>SOTELOK ANIMAL QUANT</h1>
-            <span class="tag">Quantum Master Engine v4.0</span>
+            <span class="tag">Quantum Master Engine v4.3</span>
         </div>
 
         <!-- GENERADOR DE PRONÓSTICO -->
@@ -324,9 +304,29 @@ HTML_TEMPLATE = '''
         </div>
         {% endif %}
 
-        <!-- NUTRICIÓN DE DATOS -->
+        <!-- CARGA MASIVA DE HISTORIAL (IDEAL PARA LOS 3 MESES) -->
         <div class="card">
-            <h3>📥 Cargar Sorteo Real (Actualizar IA)</h3>
+            <h3>📋 Carga Masiva por Día (Ideal Historial)</h3>
+            <form action="/cargar_masivo" method="POST">
+                <label>Lotería:</label>
+                <select name="loteria">
+                    <option value="Lotto Activo">Lotto Activo</option>
+                    <option value="La Granjita">La Granjita</option>
+                </select>
+                
+                <label>Fecha del Día (AAAA-MM-DD):</label>
+                <input type="text" name="fecha" value="{{ fecha_actual }}" required>
+
+                <label>Números ganadores del día (desde las 8:00 AM en orden):</label>
+                <textarea name="numeros_texto" rows="3" placeholder="Ej: 12, 25, 0, 36, 14, 8, 19, 27, 4, 33, 5, 22" required></textarea>
+                
+                <button type="submit" class="btn btn-purple">INSERTAR DÍA COMPLETO</button>
+            </form>
+        </div>
+
+        <!-- NUTRICIÓN DE DATOS INDIVIDUAL -->
+        <div class="card">
+            <h3>📥 Cargar Sorteo Real (Individual)</h3>
             <form action="/cargar" method="POST">
                 <label>Lotería:</label>
                 <select name="loteria">
@@ -334,8 +334,12 @@ HTML_TEMPLATE = '''
                     <option value="La Granjita">La Granjita</option>
                 </select>
                 
-                <label>Turno / Hora:</label>
+                <label>Fecha (AAAA-MM-DD):</label>
+                <input type="text" name="fecha_ind" value="{{ fecha_actual }}" required>
+
+                <label>Turno / Hora (Desde las 8:00 AM):</label>
                 <select name="turno">
+                    <option value="8:00 AM">8:00 AM</option>
                     <option value="9:00 AM">9:00 AM</option>
                     <option value="10:00 AM">10:00 AM</option>
                     <option value="11:00 AM">11:00 AM</option>
@@ -352,18 +356,18 @@ HTML_TEMPLATE = '''
                 <label>Número Ganador (0 al 36):</label>
                 <input type="number" name="animal_num" min="0" max="36" placeholder="Ej: 12" required>
                 
-                <button type="submit" class="btn btn-green">REGISTRAR Y AUTO-NUTRIR IA</button>
+                <button type="submit" class="btn btn-green">REGISTRAR SORTEO</button>
             </form>
         </div>
 
-        <!-- HISTORIAL -->
+        <!-- HISTORIAL RECIENTE -->
         <div class="card">
-            <h3>📊 Últimos Resultados en Memoria</h3>
+            <h3>📊 Últimos Registros en Memoria</h3>
             <table class="table-historial">
                 <thead>
                     <tr>
                         <th>Lotería</th>
-                        <th>Hora</th>
+                        <th>Fecha / Hora</th>
                         <th>Animal</th>
                     </tr>
                 </thead>
@@ -371,12 +375,12 @@ HTML_TEMPLATE = '''
                     {% for row in ultimos_sorteos %}
                     <tr>
                         <td>{{ row[1] }}</td>
-                        <td>{{ row[3] }}</td>
+                        <td>{{ row[2] }} <br><small style="color:var(--accent);">{{ row[3] }}</small></td>
                         <td><b>[{{ row[4] }}] {{ animal_dict.get(row[4], 'N/A') }}</b></td>
                     </tr>
                     {% else %}
                     <tr>
-                        <td colspan="3" style="text-align: center; color: var(--text-dim);">Sin registros.</td>
+                        <td colspan="3" style="text-align: center; color: var(--text-dim);">Sin registros en la base de datos.</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -391,10 +395,11 @@ HTML_TEMPLATE = '''
 def index():
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, loteria, fecha, hora_turno, animal_num FROM sorteos ORDER BY id DESC LIMIT 5")
+    cursor.execute("SELECT id, loteria, fecha, hora_turno, animal_num FROM sorteos ORDER BY id DESC LIMIT 10")
     ultimos_sorteos = cursor.fetchall()
     conn.close()
-    return render_template_string(HTML_TEMPLATE, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES)
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
+    return render_template_string(HTML_TEMPLATE, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES, fecha_actual=fecha_hoy)
 
 @app.route('/generar', methods=['GET', 'POST'])
 def generar():
@@ -406,34 +411,61 @@ def generar():
     
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    cursor.execute("SELECT id, loteria, fecha, hora_turno, animal_num FROM sorteos ORDER BY id DESC LIMIT 5")
+    cursor.execute("SELECT id, loteria, fecha, hora_turno, animal_num FROM sorteos ORDER BY id DESC LIMIT 10")
     ultimos_sorteos = cursor.fetchall()
     conn.close()
+    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
     
-    return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES)
+    return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria, ultimos_sorteos=ultimos_sorteos, animal_dict=ANIMALES, fecha_actual=fecha_hoy)
 
 @app.route('/cargar', methods=['GET', 'POST'])
 def cargar():
     if request.method == 'GET':
         return redirect(url_for('index'))
     loteria = request.form.get('loteria', 'Lotto Activo')
-    turno = request.form.get('turno', '12:00 M')
+    turno = request.form.get('turno', '8:00 AM')
+    fecha = request.form.get('fecha_ind', datetime.now().strftime('%Y-%m-%d'))
     try:
         animal_num = int(request.form.get('animal_num', 0))
     except ValueError:
         animal_num = 0
         
-    fecha_hoy = datetime.now().strftime('%Y-%m-%d')
-    
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO sorteos (loteria, fecha, hora_turno, animal_num)
         VALUES (?, ?, ?, ?)
-    ''', (loteria, fecha_hoy, turno, animal_num))
+    ''', (loteria, fecha, turno, animal_num))
     conn.commit()
     conn.close()
     
+    return redirect(url_for('index'))
+
+@app.route('/cargar_masivo', methods=['POST'])
+def cargar_masivo():
+    loteria = request.form.get('loteria', 'Lotto Activo')
+    fecha = request.form.get('fecha', datetime.now().strftime('%Y-%m-%d'))
+    texto = request.form.get('numeros_texto', '')
+    
+    tokens = re.findall(r'\d+', texto)
+    
+    if tokens:
+        turnos_base = ['8:00 AM', '9:00 AM', '10:00 AM', '11:00 AM', '12:00 M', '1:00 PM', '2:00 PM', '3:00 PM', '4:00 PM', '5:00 PM', '6:00 PM', '7:00 PM']
+        conn = sqlite3.connect(DB_NAME)
+        cursor = conn.cursor()
+        
+        for i, token in enumerate(tokens):
+            num = int(token)
+            if 0 <= num <= 36:
+                turno_asig = turnos_base[i % len(turnos_base)]
+                cursor.execute('''
+                    INSERT INTO sorteos (loteria, fecha, hora_turno, animal_num)
+                    VALUES (?, ?, ?, ?)
+                ''', (loteria, fecha, turno_asig, num))
+        
+        conn.commit()
+        conn.close()
+        
     return redirect(url_for('index'))
 
 if __name__ == '__main__':
