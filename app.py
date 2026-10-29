@@ -296,16 +296,23 @@ HTML_TEMPLATE = '''
 def index():
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/generar', methods=['POST'])
+@app.route('/generar', methods=['GET', 'POST'])
 def generar():
-    loteria = request.form.get('loteria')
+    if request.method == 'GET':
+        return redirect(url_for('index'))
+    loteria = request.form.get('loteria', 'Lotto Activo')
     resultado = ia_3_maestra_sintetizadora(loteria)
     return render_template_string(HTML_TEMPLATE, pronostico=resultado, loteria=loteria)
 
-@app.route('/cargar_sorteo', methods=['POST'])
+@app.route('/cargar_sorteo', methods=['GET', 'POST'])
 def cargar_sorteo():
-    loteria = request.form.get('loteria')
-    animal_num = int(request.form.get('animal_num'))
+    if request.method == 'GET':
+        return redirect(url_for('index'))
+    loteria = request.form.get('loteria', 'Lotto Activo')
+    try:
+        animal_num = int(request.form.get('animal_num', 0))
+    except ValueError:
+        animal_num = 0
     
     conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
